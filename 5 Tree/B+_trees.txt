@@ -1,0 +1,219 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+#define MAX 4  // Max keys in node (B+ tree order = MAX + 1)
+#define MIN (MAX / 2)
+
+typedef struct BPTreeNode {
+    int keys[MAX + 1];          // Keys
+    struct BPTreeNode* children[MAX + 2]; // Children pointers
+    struct BPTreeNode* next;    // Leaf node next pointer
+    int isLeaf;
+    int n;                      // Current number of keys
+} BPTreeNode;
+
+BPTreeNode* root = NULL;
+
+// Create new node
+BPTreeNode* createNode(int isLeaf) {
+    BPTreeNode* newNode = (BPTreeNode*)malloc(sizeof(BPTreeNode));
+    newNode->isLeaf = isLeaf;
+    newNode->n = 0;
+    newNode->next = NULL;
+    for (int i = 0; i < MAX + 2; i++) newNode->children[i] = NULL;
+    return newNode;
+}
+
+// Search a key
+void search(int key) {
+    BPTreeNode* current = root;
+    while (current && !current->isLeaf) {
+        int i;
+        for (i = 0; i < current->n && key >= current->keys[i]; i++);
+        current = current->children[i];
+    }
+    if (current) {
+        for (int i = 0; i < current->n; i++) {
+            if (current->keys[i] == key) {
+                printf("Key %d found in leaf node.\n", key);
+                return;
+            }
+        }
+    }
+    printf("Key %d not found.\n", key);
+}
+
+// Split leaf
+void splitLeaf(BPTreeNode* parent, BPTreeNode* leaf, int index) {
+    BPTreeNode* newLeaf = createNode(1);
+    int mid = (MAX + 1) / 2;
+    
+    newLeaf->n = leaf->n - mid;
+    for (int i = 0; i < newLeaf->n; i++)
+        newLeaf->keys[i] = leaf->keys[mid + i];
+    
+    leaf->n = mid;
+    newLeaf->next = leaf->next;
+    leaf->next = newLeaf;
+
+    for (int i = parent->n; i > index; i--) {
+        parent->keys[i] = parent->keys[i - 1];
+        parent->children[i + 1] = parent->children[i];
+    }
+    parent->keys[index] = newLeaf->keys[0];
+    parent->children[index + 1] = newLeaf;
+    parent->n++;
+}
+
+// Split internal node
+void splitInternal(BPTreeNode* parent, BPTreeNode* child, int index) {
+    BPTreeNode* newChild = createNode(0);
+    int mid = MAX / 2;
+
+    newChild->n = child->n - mid - 1;
+    for (int i = 0; i < newChild->n; i++)
+        newChild->keys[i] = child->keys[mid + 1 + i];
+    for (int i = 0; i <= newChild->n; i++)
+        newChild->children[i] = child->children[mid + 1 + i];
+
+    int midKey = child->keys[mid];
+    child->n = mid;
+
+    for (int i = parent->n; i > index; i--) {
+        parent->keys[i] = parent->keys[i - 1];
+        parent->children[i + 1] = parent->children[i];
+    }
+    parent->keys[index] = midKey;
+    parent->children[index + 1] = newChild;
+    parent->n++;
+}
+
+// Insert helper
+void insertInternal(BPTreeNode* current, int key, BPTreeNode* child) {
+    if (current->n < MAX) {
+        int i = current->n - 1;
+        while (i >= 0 && key < current->keys[i]) {
+            current->keys[i + 1] = current->keys[i];
+            current->children[i + 2] = current->children[i + 1];
+            i--;
+        }
+        current->keys[i + 1] = key;
+        current->children[i + 2] = child;
+        current->n++;
+    } else {
+        BPTreeNode* newRoot;
+        if (current == root) {
+            newRoot = createNode(0);
+            root = newRoot;
+            newRoot->children[0] = current;
+        } else {
+            newRoot = current;
+        }
+
+        int i = newRoot->n - 1;
+        while (i >= 0 && key < newRoot->keys[i]) {
+            newRoot->keys[i + 1] = newRoot->keys[i];
+            newRoot->children[i + 2] = newRoot->children[i + 1];
+            i--;
+        }
+        newRoot->keys[i + 1] = key;
+        newRoot->children[i + 2] = child;
+        newRoot->n++;
+
+        if (newRoot->n > MAX)
+            splitInternal(root, newRoot, 0);
+    }
+}
+
+// Insert main function
+void insert(int key) {
+    if (root == NULL) {
+        root = createNode(1);
+        root->keys[0] = key;
+        root->n = 1;
+        return;
+    }
+
+    BPTreeNode* current = root;
+    BPTreeNode* parent = NULL;
+    int index;
+
+    while (!current->isLeaf) {
+        parent = current;
+        for (index = 0; index < current->n && key >= current->keys[index]; index++);
+        current = current->children[index];
+    }
+
+    // Insert key
+    int i = current->n - 1;
+    while (i >= 0 && key < current->keys[i]) {
+        current->keys[i + 1] = current->keys[i];
+        i--;
+    }
+    current->keys[i + 1] = key;
+    current->n++;
+
+    if (current->n > MAX) {
+        if (parent == NULL) {
+            parent = createNode(0);
+            parent->children[0] = current;
+            root = parent;
+        }
+        for (index = 0; index <= parent->n; index++) {
+            if (parent->children[index] == current)
+                break;
+        }
+        splitLeaf(parent, current, index);
+    }
+}
+
+// Display leaf level
+void displayLeaves() {
+    BPTreeNode* current = root;
+    while (current && !current->isLeaf)
+        current = current->children[0];
+    printf("Leaf level: ");
+    while (current) {
+        for (int i = 0; i < current->n; i++)
+            printf("%d ", current->keys[i]);
+        current = current->next;
+    }
+    printf("\n");
+}
+
+// Menu-driven main
+int main() {
+    int choice, key;
+
+    while (1) {
+        printf("\nB+ Tree Menu:\n");
+        printf("1. Insert\n2. Search\n3. Display Leaf Level\n4. Exit\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+        case 1:
+            printf("Enter key to insert: ");
+            scanf("%d", &key);
+            insert(key);
+            break;
+
+        case 2:
+            printf("Enter key to search: ");
+            scanf("%d", &key);
+            search(key);
+            break;
+
+        case 3:
+            displayLeaves();
+            break;
+
+        case 4:
+            exit(0);
+
+        default:
+            printf("Invalid choice!\n");
+        }
+    }
+    return 0;
+}
